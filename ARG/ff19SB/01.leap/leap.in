@@ -1,0 +1,3 @@
+x = sequence { ACE ARG NME }
+set default pbradii mbondi3
+saveamberparm x ARGdipeptide.top ARGdipeptide.crd

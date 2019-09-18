@@ -1,0 +1,20 @@
+L0  Nsteps           time(ps)         Etot             EKinetic        
+L1  Temp             T_solute         T_solv           Pres_scal_solu  
+L2  Pres_scal_solv   BoxX             BoxY             BoxZ            
+L3  volume           pres_X           pres_Y           pres_Z          
+L4  Pressure         EKCoM_x          EKCoM_y          EKCoM_z         
+L5  EKComTot         VIRIAL_x         VIRIAL_y         VIRIAL_z        
+L6  VIRIAL_tot       E_pot            E_vdw            E_el            
+L7  E_hbon           E_bon            E_angle          E_dih           
+L8  E_14vdw          E_14el           E_const          E_pol           
+L9  AV_permMoment    AV_indMoment     AV_totMoment     Density          dV/dlambda      
+L0        1  0.1000000000E-02  -.2011931692E+03  0.2749504069E+02
+L1 0.2712966493E+03  0.2712966493E+03  -.2011952470E+09  0.1000000000E+01
+L2 0.1000000000E+01  0.0000000000E+00  0.0000000000E+00  0.0000000000E+00
+L3 0.0000000000E+00  0.0000000000E+00  0.0000000000E+00  0.0000000000E+00
+L4 0.0000000000E+00  0.0000000000E+00  0.0000000000E+00  0.0000000000E+00
+L5 0.0000000000E+00  0.0000000000E+00  0.0000000000E+00  0.0000000000E+00
+L6 0.0000000000E+00  -.2286882099E+03  -.3107920823E+01  0.6894433530E+02
+L7 -.8364414395E+02  0.2263973989E+01  0.1980948994E+01  0.9309711782E+01
+L8 0.3695190962E+01  -.2281303061E+03  0.0000000000E+00  0.0000000000E+00
+L9 0.0000000000E+00  0.0000000000E+00  0.0000000000E+00  0.0000000000E+00  0.0000000000E+00

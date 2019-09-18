@@ -1,0 +1,17 @@
+prometheus
+3
+/mnt/raidc2/ywang/hackathon/testset/ff19SB/03.md/ambernewSPFP
+
+Program received signal SIGSEGV: Segmentation fault - invalid memory reference.
+
+Backtrace for this error:
+#0  0x15359bc9f2da in ???
+#1  0x15359bc9e503 in ???
+#2  0x15359af92f1f in ???
+#3  0x5556c294b625 in ???
+#4  0x5556c28bdc96 in ???
+#5  0x5556c280fbae in ???
+#6  0x15359af75b96 in ???
+#7  0x5556c281cf09 in ???
+#8  0xffffffffffffffff in ???
+/tmp/slurmd/job09398/slurm_script: line 14: 22783 Segmentation fault      (core dumped) $AMBERHOME/bin/pmemd.cuda_SPFP -O -i md.in -p ../../01.leap/ARGdipeptide.top -c ../../02.min/min.rst -o md.out -x md.x -inf mdinfo -r md.rst

@@ -1,0 +1,3 @@
+x = sequence { ACE GLY NME }
+set default pbradii mbondi3
+saveamberparm x GLYdipeptide.top GLYdipeptide.crd
