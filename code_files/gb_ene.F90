@@ -773,7 +773,7 @@ endif !(gbsa == 3)
   end if ! (gbsa .eq. 1)
   ! where is gpu_gbsa34_setup() 
   if (gbsa .eq. 3 ) then
-    call gpu_gbsa3_setup(sigmaNP, epsilonNP, radiusNP)
+    call gpu_gbsa3_setup(sigmaNP, epsilonNP, radiusNP, maxSASANP)
   end if
 #endif
 

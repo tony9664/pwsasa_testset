@@ -10305,6 +10305,7 @@ extern "C" void gpu_gb_ene_(gb_pot_ene_rec* pEnergy, double enmr[3], int* ineb)
   enmr[0] = energy[14];
   enmr[1] = energy[15];
   enmr[2] = energy[16];
+  pEnergy->esurf = energy[18]; 
 }
 
 //---------------------------------------------------------------------------------------------
