@@ -46,9 +46,9 @@
   volatile __shared__ NLForce sForce[GBNONBONDENERGY1_THREADS_PER_BLOCK];
   volatile __shared__ unsigned int sPos[GBNONBONDENERGY1_THREADS_PER_BLOCK / GRID];
   volatile __shared__ unsigned int sNext[GRID];
-#ifdef GB_GBSA3
-  volatile __shared__ PMEDouble red_esurf[GBNONBONDENERGY1_THREADS_PER_BLOCK / GRID]; //pwsasa
-#endif
+//#ifdef GB_GBSA3
+//  volatile __shared__ PMEDouble red_esurf[GBNONBONDENERGY1_THREADS_PER_BLOCK / GRID]; //pwsasa
+//#endif
   // Read static data
   if (threadIdx.x < GRID) {
     sNext[threadIdx.x] = (threadIdx.x + 1) & (GRID - 1);
@@ -621,45 +621,22 @@
   esurf += __SHFL(0xFFFFFFFF, esurf, threadIdx.x ^ 16); //pwsasa
 #endif
 
-#ifdef GB_GBSA3
-  // reduction in blocks
-  if (threadIdx.x % GRID == 0) {
-     red_esurf[threadIdx.x / warpSize] = esurf;
-   }
-  
-  __syncthreads();
-  // red_esurf is in shared memory on a given block
-  for (unsigned int s=(GBNONBONDENERGY1_THREADS_PER_BLOCK / GRID)/2; s>=1 ; s/=2){
-     if (threadIdx.x < s) {
-       red_esurf[threadIdx.x] += red_esurf[threadIdx.x+s];
-     }
-  }
-
-  //if ( threadIdx.x == 0 && blockIdx.x == 0 && cSim.surften > 0 ) { //pwsasa correction for maxsasa
-  //    esurf += fast_llrintf( ENERGYSCALEF * (PMEFloat)361.108307897 * cSim.surften ); //surften maxsasa correction
-  //    for(unsigned int i=0 ; i < cSim.atoms; i++){
-        //printf("esurf added once, %d \n", cSim.pgbsa_maxsasa[i]);
-  //      esurf += fast_llrintf( ENERGYSCALEF * (PMEFloat)0.681431329392 * cSim.pgbsa_maxsasa[i] * cSim.surften );
-  //    }
-  //  }
-
-  //atomic add from the first thread in each block 
-  if (threadIdx.x == 0) {
-      atomicAdd(cSim.pESurf, llitoulli(red_esurf[threadIdx.x])); //pwsasa
-  }
-#endif
   // Write out energies
   if ((threadIdx.x & GRID_BITS_MASK) == 0) {
 #  ifndef use_DPFP
     atomicAdd(cSim.pEGB, llitoulli(egb));
     atomicAdd(cSim.pEVDW, llitoulli(evdw));
     atomicAdd(cSim.pEELT, llitoulli(eelt));
-    //atomicAdd(cSim.pESurf, llitoulli(esurf)); //pwsasa
+#ifdef GB_GBSA3
+    atomicAdd(cSim.pESurf, llitoulli(esurf)); //pwsasa
+#endif
 #  else // use_DPFP
     atomicAdd(cSim.pEGB, llitoulli(llrint(egb * ENERGYSCALE)));
     atomicAdd(cSim.pEVDW, llitoulli(llrint(evdw * ENERGYSCALE)));
     atomicAdd(cSim.pEELT, llitoulli(llrint(eelt * ENERGYSCALE)));
-    //atomicAdd(cSim.pESurf, llitoulli(llrint(esurf * ENERGYSCALE)));
+#ifdef GB_GBSA3
+    atomicAdd(cSim.pESurf, llitoulli(llrint(esurf * ENERGYSCALE)));
+#endif
 #  endif
   }
 #ifdef GB_GBSA3
@@ -667,8 +644,14 @@
     if ( threadIdx.x == 0 && blockIdx.x == 0 && cSim.surften > 0 ) { //pwsasa correction for maxsasa
         *cSim.pESurf += llitoulli ( fast_llrintf( ENERGYSCALEF * (PMEFloat)361.108307897 * cSim.surften )); //surften maxsasa correction
         for(unsigned int i=0 ; i < cSim.atoms; i++){
-            //printf("esurf added once, %d \n", cSim.pgbsa_maxsasa[i]);
             *cSim.pESurf += llitoulli ( fast_llrintf( ENERGYSCALEF * (PMEFloat)0.681431329392 * cSim.pgbsa_maxsasa[i] * cSim.surften ));
+        }
+    }
+#  else // use_DPFP
+    if ( threadIdx.x == 0 && blockIdx.x == 0 && cSim.surften > 0 ) { //pwsasa correction for maxsasa
+        *cSim.pESurf += llitoulli ( llrint( ENERGYSCALE * (PMEFloat)361.108307897 * cSim.surften )); //surften maxsasa correction
+        for(unsigned int i=0 ; i < cSim.atoms; i++){
+            *cSim.pESurf += llitoulli ( llrint( ENERGYSCALE * (PMEFloat)0.681431329392 * cSim.pgbsa_maxsasa[i] * cSim.surften ));
         }
     }
 #  endif

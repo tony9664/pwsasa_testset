@@ -183,17 +183,8 @@ extern "C" void kCalculateGBNonbondForces1(gpuContext gpu)
 {
   if (gpu->imin == 0) {
     if (gpu->sim.igb != 6) {
-       //if (gpu->gbsa == 3) {
-       //  printf("Yes, gbsa = 3\n");
-       //  #define GB_GBSA3
-       //  kCalculateGBNonbondForces1_kernel<<<gpu->GBNonbondEnergy1Blocks,
-       //                                   gpu->GBNonbondEnergy1ThreadsPerBlock>>>();
-       //  #undef GB_GBSA3
-       //}
-       //else{
-         kCalculateGBNonbondForces1_kernel<<<gpu->GBNonbondEnergy1Blocks,
+      kCalculateGBNonbondForces1_kernel<<<gpu->GBNonbondEnergy1Blocks,
                                           gpu->GBNonbondEnergy1ThreadsPerBlock>>>();
-       //}
 }
     else {
       kCalculateGBNonbondForces1IGB6_kernel<<<gpu->GBNonbondEnergy1Blocks,
@@ -223,12 +214,9 @@ extern "C" void kCalculateGBNonbondEnergy1(gpuContext gpu)
 {
   if (gpu->imin == 0) {
     if (gpu->sim.igb != 6) {
-       printf("GBSA = %d\n",gpu->gbsa);
        if(gpu->gbsa==3){
-          //#define GB_GBSA3
           kCalculateGBSA3_kernel<<<gpu->GBNonbondEnergy1Blocks,
                                           gpu->GBNonbondEnergy1ThreadsPerBlock>>>();
-          //#undef GB_GBSA3
        }
        else{
           kCalculateGBNonbondEnergy1_kernel<<<gpu->GBNonbondEnergy1Blocks,
