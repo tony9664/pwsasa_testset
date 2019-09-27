@@ -13,7 +13,6 @@
 // Use global instance instead of a local copy 
 #include "simulationConst.h"
 CSIM_STO simulationConst cSim;
-
 //---------------------------------------------------------------------------------------------
 // SetkCalculateGBNonbondEnergy1Sim: this is called by gpuCopyConstants (see gpu.cpp) and is
 //                                   jused to port GB constants to the device.
@@ -71,6 +70,15 @@ __launch_bounds__(GBNONBONDENERGY1_THREADS_PER_BLOCK,
                   GBNONBONDENERGY1_BLOCKS_MULTIPLIER)
 void kCalculateGBNonbondEnergy1_kernel()
 #include "kCalculateGBNonbondEnergy1.h"
+
+#define GB_GBSA3
+__global__
+__launch_bounds__(GBNONBONDENERGY1_THREADS_PER_BLOCK,
+                  GBNONBONDENERGY1_BLOCKS_MULTIPLIER)
+void kCalculateGBSA3_kernel()
+#include "kCalculateGBNonbondEnergy1.h"
+#undef GB_GBSA3
+
 #undef GB_ENERGY
 
 //---------------------------------------------------------------------------------------------
@@ -206,9 +214,15 @@ extern "C" void kCalculateGBNonbondEnergy1(gpuContext gpu)
 {
   if (gpu->imin == 0) {
     if (gpu->sim.igb != 6) {
-      kCalculateGBNonbondEnergy1_kernel<<<gpu->GBNonbondEnergy1Blocks,
+       if(gpu->gbsa==3){
+          kCalculateGBSA3_kernel<<<gpu->GBNonbondEnergy1Blocks,
                                           gpu->GBNonbondEnergy1ThreadsPerBlock>>>();
-    }
+       }
+       else{
+          kCalculateGBNonbondEnergy1_kernel<<<gpu->GBNonbondEnergy1Blocks,
+                                          gpu->GBNonbondEnergy1ThreadsPerBlock>>>();
+       }
+    }  
     else {
       kCalculateGBNonbondEnergy1IGB6_kernel<<<gpu->GBNonbondEnergy1Blocks,
                                               gpu->GBNonbondEnergy1ThreadsPerBlock>>>();
@@ -235,68 +249,35 @@ __global__ void
 __launch_bounds__(REDUCEBUFFER_THREADS_PER_BLOCK, 1)
 kReduceMaxsasaEsurf_kernel()
 {
-  //volatile __shared__ PMEDouble sEsurf[1024];
-  volatile __shared__ PMEDouble sEsurf[REDUCEBUFFER_THREADS_PER_BLOCK / GRID]; //pwsasa
+  volatile __shared__ PMEDouble sEsurf[REDUCEBUFFER_THREADS_PER_BLOCK / GRID]; //shared memory array pwsasa
   PMEDouble tempes = (PMEDouble)0.0;
   unsigned int pos = blockIdx.x * blockDim.x + threadIdx.x;
   while (pos < cSim.atoms) {
-//#  ifndef use_DPFP
+    // add the intecept only to the first thread
     if ( threadIdx.x == 0 && blockIdx.x == 0 && cSim.surften > 0 ) { //pwsasa correction for maxsasa
-       //*cSim.pESurf += llitoulli ( fast_llrintf( ENERGYSCALEF * (PMEFloat)361.108307897 * cSim.surften ));
-      //tempes += fast_llrintf( ENERGYSCALEF * (PMEFloat)361.108307897 * cSim.surften ); //surften maxsasa correction
-      tempes += (PMEFloat)361.108307897 * cSim.surften; //surften maxsasa correction
-       //printf("esurf added once, %d \n", cSim.pgbsa_maxsasa[i]);
-      // atomicAdd(cSim.pESurf, llitoulli(tempsurf)); //pwsasa
+       tempes += (PMEFloat)361.108307897 * cSim.surften; //surften maxsasa correction
     }
-      //tempes += fast_llrintf( ENERGYSCALEF * (PMEFloat)0.681431329392 * cSim.pgbsa_maxsasa[pos] * cSim.surften );
-      tempes += (PMEFloat)0.681431329392 * cSim.pgbsa_maxsasa[pos] * cSim.surften;
-      //tempes += fast_llrintf( (PMEFloat)0.681431329392 * cSim.pgbsa_maxsasa[pos] * cSim.surften );
-//#  else // use_DPFP
-    //if (threadIdx.x == 0 & blockIdx.x == 0){
-    //  esurf = (double)((PMEFloat)361.108307897 * cSim.surften) ; //surften maxsasa correction
-   // }
-   //   esurf = (double)((PMEFloat)0.681431329392 * cSim.pgbsa_maxsasa[i] * cSim.surften) ;
-   //   atomicAdd(cSim.pESurf, llitoulli(llrint(esurf * ENERGYSCALE)));
-//# endif
-      pos += blockDim.x * gridDim.x;
-  }
-
+    tempes += (PMEFloat)0.681431329392 * cSim.pgbsa_maxsasa[pos] * cSim.surften;
+    pos += blockDim.x * gridDim.x;
+  } // END of while
+  // reduction in warp space using shuffle down
   for (int s=GRID/2; s>=1 ; s/=2){
      tempes += __shfl_down(tempes, s);
   }
-  /*tempes  += __SHFL(0xFFFFFFFF, tempes, threadIdx.x ^ 1);
-  tempes  += __SHFL(0xFFFFFFFF, tempes, threadIdx.x ^ 2);
-  tempes  += __SHFL(0xFFFFFFFF, tempes, threadIdx.x ^ 4);
-  tempes  += __SHFL(0xFFFFFFFF, tempes, threadIdx.x ^ 8);
-  tempes  += __SHFL(0xFFFFFFFF, tempes, threadIdx.x ^ 16);
-  */
-  // reduction in blocks
+  // Now reduction in blocks
   if (threadIdx.x % GRID == 0) {
      sEsurf[threadIdx.x / GRID] = tempes;
    }
   __syncthreads();
-
-  // red_esurf is in shared memory on a given block
   for (unsigned int s=(REDUCEBUFFER_THREADS_PER_BLOCK/ GRID)/2; s>=1 ; s/=2){
      if (threadIdx.x < s) {
        sEsurf[threadIdx.x] += sEsurf[threadIdx.x+s];
      }
   }
-
- /*
-  // block reduction 
-  sEsurf[threadIdx.x]  = tempes;
-  sEsurf[threadIdx.x] += sEsurf[threadIdx.x ^ 1];
-  sEsurf[threadIdx.x] += sEsurf[threadIdx.x ^ 2];
-  sEsurf[threadIdx.x] += sEsurf[threadIdx.x ^ 4];
-  sEsurf[threadIdx.x] += sEsurf[threadIdx.x ^ 8];
-  sEsurf[threadIdx.x] += sEsurf[threadIdx.x ^ 16];
-*/
+  // add the maxsasa contribution of each atom to ESURF
   if (threadIdx.x  == 0) {
-  //if (threadIdx.x  == 0) {
     atomicAdd(cSim.pESurf, llitoulli(llrint(sEsurf[threadIdx.x] * ENERGYSCALEF)));
   } 
-
 }
 //pwsasa
 extern "C" void kReduceMaxsasaEsurf(gpuContext gpu)
