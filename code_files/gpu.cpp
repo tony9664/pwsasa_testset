@@ -10240,6 +10240,9 @@ extern "C" void gpu_gb_ene_(gb_pot_ene_rec* pEnergy, double enmr[3], int* ineb)
       kReduceGBBornRadii(gpu);
     }
     kCalculateGBNonbondEnergy1(gpu);
+    if (gpu->gbsa == 3) {
+       kReduceMaxsasaEsurf(gpu); //pwsasa only do when gbsa=3
+    }
     if (gpu->sim.igb != 6) {
 #ifdef MPI
       gpu_gather_gb_temp7();  
@@ -10379,7 +10382,6 @@ extern "C" void gpu_gbsa3_setup_(double sigma[], double epsilon[], double radius
     gpu->sim.pgbsa_epsilon                      = gpu->sim.pgbsa_sigma + gpu->sim.stride;
     gpu->sim.pgbsa_radius                       = gpu->sim.pgbsa_sigma + gpu->sim.stride2;
     gpu->sim.pgbsa_maxsasa                      = gpu->sim.pgbsa_sigma + gpu->sim.stride3;
-
     // Fill arrays
     PMEFloat* pSigma                            = gpu->pbGBSASigEpsiRadiMax->_pSysData;
     PMEFloat* pEpsilon                          = gpu->pbGBSASigEpsiRadiMax->_pSysData + gpu->sim.stride;
