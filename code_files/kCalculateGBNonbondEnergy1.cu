@@ -185,7 +185,7 @@ extern "C" void kCalculateGBNonbondForces1(gpuContext gpu)
     if (gpu->sim.igb != 6) {
       kCalculateGBNonbondForces1_kernel<<<gpu->GBNonbondEnergy1Blocks,
                                           gpu->GBNonbondEnergy1ThreadsPerBlock>>>();
-}
+    }
     else {
       kCalculateGBNonbondForces1IGB6_kernel<<<gpu->GBNonbondEnergy1Blocks,
                                               gpu->GBNonbondEnergy1ThreadsPerBlock>>>();
@@ -240,6 +240,53 @@ extern "C" void kCalculateGBNonbondEnergy1(gpuContext gpu)
   }
   LAUNCHERROR("kCalculateGBNonbondEnergy1");
 }
+
+//--------------------------------------------------------------------------------------------
+// kReduceMaxsasaEsurf_kernel: Experimenting adding a kernel for reductions of atom loop to add
+//                             maxsasa to Esurf from kCalculateGBNonbondEnergy1 kernel 
+// -------------------------------------------------------------------------------------------
+__global__ void 
+__launch_bounds__(REDUCEBUFFER_THREADS_PER_BLOCK, 1)
+kReduceMaxsasaEsurf_kernel()
+{
+  volatile __shared__ PMEDouble sEsurf[REDUCEBUFFER_THREADS_PER_BLOCK / GRID]; //shared memory array pwsasa
+  PMEDouble tempes = (PMEDouble)0.0;
+  unsigned int pos = blockIdx.x * blockDim.x + threadIdx.x;
+  while (pos < cSim.atoms) {
+    // add the intecept only to the first thread
+    if ( threadIdx.x == 0 && blockIdx.x == 0 && cSim.surften > 0 ) { //pwsasa correction for maxsasa
+       tempes += (PMEFloat)361.108307897 * cSim.surften; //surften maxsasa correction
+    }
+    tempes += (PMEFloat)0.681431329392 * cSim.pgbsa_maxsasa[pos] * cSim.surften;
+    pos += blockDim.x * gridDim.x;
+  } // END of while
+  // reduction in warp space using shuffle down
+  for (int s=GRID/2; s>=1 ; s/=2){
+     tempes += __shfl_down(tempes, s);
+  }
+  // Now reduction in blocks
+  if (threadIdx.x % GRID == 0) {
+     sEsurf[threadIdx.x / GRID] = tempes;
+   }
+  __syncthreads();
+  for (unsigned int s=(REDUCEBUFFER_THREADS_PER_BLOCK/ GRID)/2; s>=1 ; s/=2){
+     if (threadIdx.x < s) {
+       sEsurf[threadIdx.x] += sEsurf[threadIdx.x+s];
+     }
+  }
+  // add the maxsasa contribution of each atom to ESURF
+  if (threadIdx.x  == 0) {
+    atomicAdd(cSim.pESurf, llitoulli(llrint(sEsurf[threadIdx.x] * ENERGYSCALEF)));
+  } 
+}
+//pwsasa
+extern "C" void kReduceMaxsasaEsurf(gpuContext gpu)
+{
+  kReduceMaxsasaEsurf_kernel<<<gpu->blocks, gpu->reduceBufferThreadsPerBlock>>>();
+  LAUNCHERROR("kReduceMaxsasaEsurf");
+}
+//pwsasa end
+
 
 //---------------------------------------------------------------------------------------------
 // kReduceGBTemp7_kernel: GB forces reduction kernel

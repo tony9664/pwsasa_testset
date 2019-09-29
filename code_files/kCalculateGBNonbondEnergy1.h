@@ -14,6 +14,7 @@
     PMEFloat q;
     unsigned int LJID;
     PMEFloat r;
+
     PMEFloat sig; //pwsasa sigma for a given atom
     PMEFloat eps; //pwsasa epsilon for a given atom
     PMEFloat rad; //pwsasa radius for a given atom
@@ -44,7 +45,9 @@
   volatile __shared__ NLForce sForce[GBNONBONDENERGY1_THREADS_PER_BLOCK];
   volatile __shared__ unsigned int sPos[GBNONBONDENERGY1_THREADS_PER_BLOCK / GRID];
   volatile __shared__ unsigned int sNext[GRID];
-
+#ifdef GB_GBSA3
+  volatile __shared__ PMEDouble red_esurf[GBNONBONDENERGY1_THREADS_PER_BLOCK / GRID]; //pwsasa
+#endif
   // Read static data
   if (threadIdx.x < GRID) {
     sNext[threadIdx.x] = (threadIdx.x + 1) & (GRID - 1);
@@ -55,7 +58,9 @@
   PMEForce egb  = (PMEForce)0;
   PMEForce eelt = (PMEForce)0;
   PMEForce evdw = (PMEForce)0;
+#ifdef GB_GBSA3
   PMEForce esurf = (PMEForce)0; //pwsasa nonpolar energy esurf
+#endif
 #endif
 
   // Initialize queue position
@@ -72,10 +77,11 @@
     PMEFloat2 xyi    = cSim.pAtomXYSP[i];
     PMEFloat zi      = cSim.pAtomZSP[i];
     PMEFloat2 qljid  = cSim.pAtomChargeSPLJID[i];
+#ifdef GB_GBSA3
     PMEFloat signpi  = cSim.pgbsa_sigma[i]; //pwsasa sigma
     PMEFloat radnpi  = cSim.pgbsa_radius[i];  //pwsasa radius
     PMEFloat epsnpi  = cSim.pgbsa_epsilon[i]; //pwsasa maxsasa
-
+#endif
 #ifndef GB_IGB6
     PMEFloat ri      = cSim.pReffSP[i];
 #endif
@@ -110,9 +116,11 @@
 #else
       PSATOMLJID(tgx)    = __float_as_uint(qljid.y);
 #endif
+#ifdef GB_GBSA3
       PSATOMSIG(tgx)     = signpi; //pwsasa
       PSATOMEPS(tgx)     = epsnpi; //pwsasa
       PSATOMRAD(tgx)     = radnpi; //pwsasa
+#endif
 #ifndef GB_IGB6
       PSATOMR(tgx)       = ri;
 #endif
@@ -123,10 +131,11 @@
       shAtom.q    = __SHFL(0xFFFFFFFF, shAtom.q, shIdx);
       shAtom.r    = __SHFL(0xFFFFFFFF, shAtom.r, shIdx);
       shAtom.LJID = __SHFL(0xFFFFFFFF, shAtom.LJID, shIdx);
+#ifdef GB_GBSA3
       shAtom.sig  = __SHFL(0xFFFFFFFF, shAtom.sig, shIdx); //pwsasa
       shAtom.eps  = __SHFL(0xFFFFFFFF, shAtom.eps, shIdx); //pwsasa
       shAtom.rad  = __SHFL(0xFFFFFFFF, shAtom.rad, shIdx); //pwsasa
-
+#endif
       unsigned int j = sNext[tgx];
       unsigned int mask1 = __BALLOT(0xFFFFFFFF, j != tgx); 
       while (j != tgx) {
@@ -184,6 +193,7 @@
         PMEFloat temp5  = (PMEFloat)0.50 * temp1 * temp6 * (ri*rj + (PMEFloat)0.25*r2);
         sumdeijda_i    += (PMEDouble)(ri * temp5);
 #endif
+#ifdef GB_GBSA3
 // pwsasa calculations begin
         // Agnes-calculate reflect-vdwlike
         if (cSim.surften > 0) {
@@ -198,9 +208,9 @@
                 PMEFloat Sij      = radnpi + PSATOMRAD(j) + signpi + PSATOMSIG(j);
                 PMEFloat reflectvdwA  = paraA*pow((Sij-dist),((int)-1*orderm));
                 PMEFloat reflectvdwB  = paraB*pow((Sij-dist),((int)-1*ordern));
-                PMEFloat AgNPe        = (reflectvdwB - reflectvdwA - sqrt(epsnpi*PSATOMEPS(j))) * cSim.surften;
+                PMEFloat AgNPe        = (reflectvdwB - reflectvdwA - sqrt(epsnpi*PSATOMEPS(j))) * cSim.surften * (PMEFloat)0.6;
                 PMEFloat tempreflect  = pow((Sij-dist),((int)-1));
-                PMEFloat AgNPde       = (orderm*reflectvdwA*tempreflect-ordern*reflectvdwB*tempreflect)* v5 * (PMEFloat)2.0 * cSim.surften; 
+                PMEFloat AgNPde       = (orderm*reflectvdwA*tempreflect-ordern*reflectvdwB*tempreflect)* v5 * (PMEFloat)2.0 * cSim.surften * (PMEFloat)0.6; 
 #ifdef use_SPFP
                 de             += FORCESCALEF * AgNPde ; 
 #ifdef GB_ENERGY
@@ -215,7 +225,8 @@
             }
          }
       } //End of surften >? 0 
-// pwsasa calculations end 
+// pwsasa calculations end
+#endif //GB_GBSA3 
 
 #else  //GB_IGB6
         PMEFloat de     = 0.0;
@@ -311,10 +322,11 @@
       PSATOMZ(tgx)     = cSim.pAtomZSP[j];
       PSATOMR(tgx)     = cSim.pReffSP[j];
       PSATOMQ(tgx)     = qljidj.x;
-      //NOTE Agnes old code has signma, radius epsilon of i here pwsasa
+#ifdef GB_GBSA3
       PSATOMSIG(tgx)   = cSim.pgbsa_sigma[j]; //pwsasa
       PSATOMRAD(tgx)   = cSim.pgbsa_radius[j]; //pwsasa
       PSATOMEPS(tgx)   = cSim.pgbsa_epsilon[j]; //pwsasa
+#endif
 #ifdef use_DPFP
       PSATOMLJID(tgx)  = __double_as_longlong(qljidj.y);
 #else
@@ -405,6 +417,7 @@
         sumdeijda_i    += (PMEForce)(ri * temp5);
         sumdeijda_j    += (PMEForce)(rj * temp5);
 #  endif
+#ifdef GB_GBSA3
 //pwsasa calc begins
         // Agnes-calculate reflect-vdwlike
         if (cSim.surften > 0 ){
@@ -419,9 +432,9 @@
                 PMEFloat Sij      = radnpi + PSATOMRAD(j) + signpi + PSATOMSIG(j);
                 PMEFloat reflectvdwA  = paraA*pow((Sij-dist),((int)-1*orderm));
                 PMEFloat reflectvdwB  = paraB*pow((Sij-dist),((int)-1*ordern));
-                PMEFloat AgNPe        = (reflectvdwB - reflectvdwA - sqrt(epsnpi*PSATOMEPS(j))) * cSim.surften;
+                PMEFloat AgNPe        = (reflectvdwB - reflectvdwA - sqrt(epsnpi*PSATOMEPS(j))) * cSim.surften * (PMEFloat)0.6;
                 PMEFloat tempreflect  = pow((Sij-dist),((int)-1));
-                PMEFloat AgNPde       = (orderm*reflectvdwA*tempreflect-ordern*reflectvdwB*tempreflect)* v5 * (PMEFloat)2.0 * cSim.surften; 
+                PMEFloat AgNPde       = (orderm*reflectvdwA*tempreflect-ordern*reflectvdwB*tempreflect)* v5 * (PMEFloat)2.0 * cSim.surften * (PMEFloat)0.6; 
 #ifdef use_SPFP
                 de             += FORCESCALEF * AgNPde ; 
 #ifdef GB_ENERGY
@@ -438,7 +451,7 @@
        } //End of surten > 0 
 
 //pwsasa ends 
-
+#endif //GB_GBSA3
 #else  // GB_IGB6
         PMEFloat de     = 0.0;
 #endif // GB_IGB6
@@ -503,9 +516,11 @@
         shAtom.q    = __SHFL(mask1, shAtom.q, shIdx);
         shAtom.r    = __SHFL(mask1, shAtom.r, shIdx);
         shAtom.LJID = __SHFL(mask1, shAtom.LJID, shIdx);
+#ifdef GB_GBSA3
         shAtom.sig  = __SHFL(mask1, shAtom.sig, shIdx); //pwsasa
         shAtom.eps  = __SHFL(mask1, shAtom.eps, shIdx); //pwsasa
         shAtom.rad  = __SHFL(mask1, shAtom.rad, shIdx); //pwsasa
+#endif 
 #ifndef GB_IGB6
         sumdeijda_j   = __SHFL(mask1, sumdeijda_j, shIdx);
 #endif //GB_IGB6
@@ -567,44 +582,75 @@
   // Here ends the while loop over work units
 
 #ifdef GB_ENERGY
-  // Reduce and write energies
+  // Reduce within warps and write energies
   egb  += __SHFL(0xFFFFFFFF, egb, threadIdx.x ^ 1);
   evdw += __SHFL(0xFFFFFFFF, evdw, threadIdx.x ^ 1);
   eelt += __SHFL(0xFFFFFFFF, eelt, threadIdx.x ^ 1);
+#ifdef GB_GBSA3
   esurf += __SHFL(0xFFFFFFFF, esurf, threadIdx.x ^ 1);
- 
+#endif 
   egb  += __SHFL(0xFFFFFFFF, egb, threadIdx.x ^ 2);
   evdw += __SHFL(0xFFFFFFFF, evdw, threadIdx.x ^ 2);
   eelt += __SHFL(0xFFFFFFFF, eelt, threadIdx.x ^ 2);
+#ifdef GB_GBSA3
   esurf += __SHFL(0xFFFFFFFF, esurf, threadIdx.x ^ 2); //pwsasa
-
+#endif 
   egb  += __SHFL(0xFFFFFFFF, egb, threadIdx.x ^ 4);
   evdw += __SHFL(0xFFFFFFFF, evdw, threadIdx.x ^ 4);
   eelt += __SHFL(0xFFFFFFFF, eelt, threadIdx.x ^ 4);
+#ifdef GB_GBSA3
   esurf += __SHFL(0xFFFFFFFF, esurf, threadIdx.x ^ 4); //pwsasa
+#endif 
 
   egb  += __SHFL(0xFFFFFFFF, egb, threadIdx.x ^ 8);
   evdw += __SHFL(0xFFFFFFFF, evdw, threadIdx.x ^ 8);
   eelt += __SHFL(0xFFFFFFFF, eelt, threadIdx.x ^ 8);
+#ifdef GB_GBSA3
   esurf += __SHFL(0xFFFFFFFF, esurf, threadIdx.x ^ 8); //pwsasa
+#endif 
 
   egb  += __SHFL(0xFFFFFFFF, egb, threadIdx.x ^ 16);
   evdw += __SHFL(0xFFFFFFFF, evdw, threadIdx.x ^ 16);
   eelt += __SHFL(0xFFFFFFFF, eelt, threadIdx.x ^ 16);
+#ifdef GB_GBSA3
   esurf += __SHFL(0xFFFFFFFF, esurf, threadIdx.x ^ 16); //pwsasa
+#endif 
 
-  // Write out energies
+#ifdef GB_GBSA3
+  // reduction in blocks
+  if (threadIdx.x % GRID == 0) {
+     red_esurf[threadIdx.x / warpSize] = esurf;
+   }
+  __syncthreads();
+  // red_esurf is in shared memory on a given block
+  for (unsigned int s=(GBNONBONDENERGY1_THREADS_PER_BLOCK / GRID)/2; s>=1 ; s/=2){
+     if (threadIdx.x < s) {
+       red_esurf[threadIdx.x] += red_esurf[threadIdx.x+s];
+     }
+  }
+#  ifndef use_DPFP
+  //atomic add energy from the first thread of each block into ESURF 
+  if (threadIdx.x == 0) {
+      atomicAdd(cSim.pESurf, llitoulli(red_esurf[threadIdx.x])); //pwsasa
+  }
+#  else // use_DPFP
+  //atomic add energy from the first thread of each block into ESURF 
+  if (threadIdx.x == 0) {
+      atomicAdd(cSim.pESurf, llitoulli(llrint(red_esurf[threadIdx.x] * ENERGYSCALE))); //pwsasa
+  }
+#endif 
+#endif 
+
+  // Write out other energies
   if ((threadIdx.x & GRID_BITS_MASK) == 0) {
 #  ifndef use_DPFP
     atomicAdd(cSim.pEGB, llitoulli(egb));
     atomicAdd(cSim.pEVDW, llitoulli(evdw));
     atomicAdd(cSim.pEELT, llitoulli(eelt));
-    atomicAdd(cSim.pESurf, llitoulli(esurf)); //pwsasa
 #  else // use_DPFP
     atomicAdd(cSim.pEGB, llitoulli(llrint(egb * ENERGYSCALE)));
     atomicAdd(cSim.pEVDW, llitoulli(llrint(evdw * ENERGYSCALE)));
     atomicAdd(cSim.pEELT, llitoulli(llrint(eelt * ENERGYSCALE)));
-    atomicAdd(cSim.pESurf, llitoulli(llrint(esurf * ENERGYSCALE)));
 #  endif
   }
 #endif // GB_ENERGY
